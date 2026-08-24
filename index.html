@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LED PCB Voltage Drop Calculator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">MMT engineering tool</p>
+      <h1>One-End-Fed LED PCB Calculator</h1>
+      <p>
+        Estimate voltage along identical LED strips fed from one end. The model
+        accounts for decreasing current after every LED load.
+      </p>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Calculator views">
+      <button
+        type="button"
+        id="input-tab"
+        class="tab-button active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="input-panel"
+      >Input parameters</button>
+      <button
+        type="button"
+        id="calculation-tab"
+        class="tab-button"
+        role="tab"
+        aria-selected="false"
+        aria-controls="calculation-panel"
+        tabindex="-1"
+      >Calculation behind</button>
+      <button
+        type="button"
+        id="formulas-tab"
+        class="tab-button"
+        role="tab"
+        aria-selected="false"
+        aria-controls="formulas-panel"
+        tabindex="-1"
+      >Formulas &amp; legend</button>
+    </nav>
+
+    <div id="input-panel" role="tabpanel" aria-labelledby="input-tab">
+      <section class="panel">
+        <form id="calculator-form">
+        <div class="section-heading">
+          <div>
+            <h2>Input parameters</h2>
+            <p>Use average current for steady voltage drop. Check peak scan current separately.</p>
+          </div>
+          <div id="performanceFlag" class="performance-flag pending" role="status" aria-live="polite">
+            <strong id="performanceStatus">CHECKING</strong>
+            <span id="performanceSummary">Evaluating PCB performance</span>
+          </div>
+          <button type="button" id="reset-button" class="secondary">Restore defaults</button>
+        </div>
+
+        <label class="dimension-mode">
+          Calculate
+          <select id="dimensionMode">
+            <option value="pcbLength">PCB length</option>
+            <option value="loadCount">LED / pixel count</option>
+          </select>
+        </label>
+
+        <div class="input-grid">
+          <label>
+            Source voltage
+            <span><input id="sourceVoltage" type="number" min="0.1" step="0.01" value="5"> V</span>
+          </label>
+          <label>
+            Identical parallel strips
+            <span><input id="stripCount" type="number" min="1" step="1" value="4"></span>
+          </label>
+          <label id="loadCountLabel">
+            LEDs / load points per strip
+            <span><input id="loadCount" type="number" min="1" step="1" value="10"></span>
+          </label>
+          <label>
+            Current per LED / load
+            <span><input id="loadCurrentMa" type="number" min="0" step="0.1" value="60"> mA</span>
+          </label>
+          <label>
+            LED pitch
+            <span><input id="pitchMm" type="number" min="0" step="0.1" value="6"> mm</span>
+          </label>
+          <label>
+            PCB length
+            <span><input id="pcbLength" class="calculated-field" type="number" min="0" step="0.1" value="60" readonly> mm</span>
+            <small id="dimensionNote">Calculated: LED count × pitch</small>
+          </label>
+          <label>
+            Injection-to-first-LED distance
+            <span><input id="topOffsetMm" type="number" min="0" step="0.1" value="0"> mm</span>
+          </label>
+          <label>
+            Effective rail width, each polarity
+            <span><input id="traceWidthMm" type="number" min="0.01" step="0.1" value="2"> mm</span>
+          </label>
+          <label>
+            Copper weight
+            <select id="copperWeight">
+              <option value="17.5">0.5 oz — 17.5 µm — 0.70 mil</option>
+              <option value="35" selected>1 oz — 35 µm — 1.37 mil</option>
+              <option value="70">2 oz — 70 µm — 2.74 mil</option>
+              <option value="105">3 oz — 105 µm — 4.11 mil</option>
+              <option value="custom">Custom thickness</option>
+            </select>
+          </label>
+          <label id="copperThicknessField">
+            Copper thickness
+            <span>
+              <input id="copperThicknessUm" class="calculated-field" type="number" min="1" step="0.1" value="35" readonly> µm
+            </span>
+            <small id="copperEquivalent">Selected: 35 µm / 1.37 mil</small>
+          </label>
+          <label>
+            Parallel copper layers per polarity
+            <span><input id="parallelLayers" type="number" min="1" step="1" value="1"></span>
+          </label>
+          <label>
+            Copper temperature
+            <span><input id="copperTemperatureC" type="number" min="-50" max="200" step="1" value="60"> °C</span>
+          </label>
+          <label>
+            Combined common-feed resistance
+            <span><input id="commonFeedResistanceMohm" type="number" min="0" step="0.1" value="5"> mΩ</span>
+            <small>Power lead, connector and return path before the strips split.</small>
+          </label>
+          <label>
+            Minimum acceptable LED voltage
+            <span><input id="minimumVoltage" type="number" min="0" step="0.01" value="4.5"> V</span>
+          </label>
+        </div>
+
+          <div id="error-message" class="error" role="alert" hidden></div>
+          <div id="storage-message" class="error" role="alert" hidden></div>
+        </form>
+      </section>
+    </div>
+
+    <div
+      id="calculation-panel"
+      role="tabpanel"
+      aria-labelledby="calculation-tab"
+      tabindex="0"
+      hidden
+    >
+      <section id="results" aria-live="polite">
+      <div class="result-grid">
+        <article class="result-card primary">
+          <span>Voltage at top injection</span>
+          <strong id="topVoltage">—</strong>
+          <small>After the common feed</small>
+        </article>
+        <article class="result-card primary">
+          <span>Voltage at lower LED</span>
+          <strong id="lowerVoltage">—</strong>
+          <small id="voltageStatus">—</small>
+        </article>
+        <article class="result-card">
+          <span>Total end-to-end drop</span>
+          <strong id="totalDrop">—</strong>
+          <small id="dropPercent">—</small>
+        </article>
+        <article class="result-card">
+          <span>Total panel current</span>
+          <strong id="panelCurrent">—</strong>
+          <small id="stripCurrent">—</small>
+        </article>
+        <article class="result-card">
+          <span>Maximum rail current density</span>
+          <strong id="currentDensity">—</strong>
+          <small>At the injected end of each strip</small>
+        </article>
+        <article class="result-card">
+          <span>Estimated copper loss</span>
+          <strong id="copperLoss">—</strong>
+          <small id="feedLoss">—</small>
+        </article>
+      </div>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <h2>Voltage profile</h2>
+            <p>Differential voltage between positive and return rails at each LED.</p>
+          </div>
+        </div>
+        <svg id="voltage-chart" viewBox="0 0 800 260" role="img" aria-label="LED voltage by distance"></svg>
+      </section>
+
+      <section class="panel">
+        <h2>Calculated details</h2>
+        <dl class="details">
+          <div><dt>Source voltage</dt><dd id="detailSourceVoltage">—</dd></div>
+          <div><dt>Common-feed drop</dt><dd id="commonFeedDrop">—</dd></div>
+          <div><dt>PCB rail drop, top to bottom</dt><dd id="railDrop">—</dd></div>
+          <div><dt>Resistance per rail segment</dt><dd id="segmentResistance">—</dd></div>
+          <div><dt>Effective copper area per rail</dt><dd id="copperArea">—</dd></div>
+          <div><dt>Maximum current in each strip</dt><dd id="maxStripCurrent">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>LED-by-LED results</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>LED</th>
+                <th>Distance</th>
+                <th>Voltage</th>
+                <th>Current after load</th>
+              </tr>
+            </thead>
+            <tbody id="profile-table"></tbody>
+          </table>
+        </div>
+        <p id="table-note" class="note"></p>
+      </section>
+      </section>
+    </div>
+
+    <div
+      id="formulas-panel"
+      role="tabpanel"
+      aria-labelledby="formulas-tab"
+      tabindex="0"
+      hidden
+    >
+      <section class="panel formula-page">
+        <h2>Legend and units</h2>
+        <p>All calculations use SI units internally. Millimetres, micrometres, milliamps and milliohms are converted before use.</p>
+        <div class="table-wrap">
+          <table class="formula-table">
+            <thead>
+              <tr><th>Symbol</th><th>Meaning</th><th>Unit</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>V<sub>S</sub></code></td><td>Source voltage</td><td>V</td></tr>
+              <tr><td><code>N<sub>S</sub></code></td><td>Number of identical parallel strips</td><td>count</td></tr>
+              <tr><td><code>N</code></td><td>LEDs or load points per strip</td><td>count</td></tr>
+              <tr><td><code>I<sub>L</sub></code></td><td>Current per LED or load</td><td>A</td></tr>
+              <tr><td><code>p</code></td><td>LED pitch</td><td>m</td></tr>
+              <tr><td><code>d<sub>0</sub></code></td><td>Injection-to-first-LED distance</td><td>m</td></tr>
+              <tr><td><code>w</code></td><td>Effective rail width per polarity</td><td>m</td></tr>
+              <tr><td><code>t</code></td><td>Finished copper thickness</td><td>m</td></tr>
+              <tr><td><code>n<sub>Cu</sub></code></td><td>Parallel copper layers per polarity</td><td>count</td></tr>
+              <tr><td><code>T</code></td><td>Copper operating temperature</td><td>°C</td></tr>
+              <tr><td><code>R<sub>F</sub></code></td><td>Combined common-feed resistance</td><td>Ω</td></tr>
+              <tr><td><code>V<sub>MIN</sub></code></td><td>Minimum acceptable LED voltage</td><td>V</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel formula-page">
+        <h2>Dimension calculations</h2>
+        <div class="formula-grid">
+          <article>
+            <h3>PCB length from LED count</h3>
+            <code class="equation">L = N × p</code>
+            <p>The selected LED count multiplied by the centre-to-centre pitch.</p>
+          </article>
+          <article>
+            <h3>LED count from PCB length</h3>
+            <code class="equation">N = floor(L ÷ p)</code>
+            <p>Only complete pitch positions are counted.</p>
+          </article>
+          <article>
+            <h3>Unused PCB length</h3>
+            <code class="equation">L<sub>unused</sub> = L − N × p</code>
+            <p>The length remaining after fitting the calculated whole LED count.</p>
+          </article>
+          <article>
+            <h3>LED position</h3>
+            <code class="equation">d<sub>k</sub> = d<sub>0</sub> + (k − 1) × p</code>
+            <p>Distance from the injection point to LED <code>k</code>, where <code>k = 1…N</code>.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel formula-page">
+        <h2>Copper resistance</h2>
+        <div class="formula-grid">
+          <article>
+            <h3>Temperature-adjusted resistivity</h3>
+            <code class="equation">ρ(T) = 1.724×10<sup>−8</sup> × [1 + 0.00393 × (T − 20)]</code>
+            <p>Copper resistivity in Ω·m, referenced to 20 °C.</p>
+          </article>
+          <article>
+            <h3>Effective rail area</h3>
+            <code class="equation">A = w × t × n<sub>Cu</sub></code>
+            <p>Cross-sectional area of one polarity, including parallel layers.</p>
+          </article>
+          <article>
+            <h3>Resistance per pitch</h3>
+            <code class="equation">R<sub>P</sub> = ρ(T) × p ÷ A</code>
+            <p>Resistance of one positive or return rail segment.</p>
+          </article>
+          <article>
+            <h3>Resistance before first LED</h3>
+            <code class="equation">R<sub>0</sub> = ρ(T) × d<sub>0</sub> ÷ A</code>
+            <p>Resistance of one polarity from injection to the first load.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel formula-page">
+        <h2>Current and voltage</h2>
+        <div class="formula-grid">
+          <article>
+            <h3>Strip and panel current</h3>
+            <code class="equation">I<sub>STRIP</sub> = N × I<sub>L</sub></code>
+            <code class="equation">I<sub>PANEL</sub> = N<sub>S</sub> × I<sub>STRIP</sub></code>
+          </article>
+          <article>
+            <h3>Common-feed drop and top voltage</h3>
+            <code class="equation">V<sub>FEED</sub> = I<sub>PANEL</sub> × R<sub>F</sub></code>
+            <code class="equation">V<sub>TOP</sub> = V<sub>S</sub> − V<sub>FEED</sub></code>
+          </article>
+          <article>
+            <h3>Voltage at LED k</h3>
+            <code class="equation">V<sub>k</sub> = V<sub>TOP</sub> − 2I<sub>STRIP</sub>R<sub>0</sub> − 2I<sub>L</sub>R<sub>P</sub>Σj</code>
+            <p>For LED <code>k</code>, <code>Σj = (k − 1)(2N − k) ÷ 2</code>. The factor 2 includes positive and return rails.</p>
+          </article>
+          <article>
+            <h3>Current after LED k</h3>
+            <code class="equation">I<sub>after,k</sub> = (N − k) × I<sub>L</sub></code>
+            <p>Each successive segment carries one fewer downstream load.</p>
+          </article>
+          <article>
+            <h3>Voltage drops</h3>
+            <code class="equation">V<sub>PCB drop</sub> = V<sub>TOP</sub> − V<sub>N</sub></code>
+            <code class="equation">V<sub>TOTAL drop</sub> = V<sub>S</sub> − V<sub>N</sub></code>
+          </article>
+          <article>
+            <h3>Maximum current density</h3>
+            <code class="equation">J<sub>MAX</sub> = I<sub>STRIP</sub> ÷ A</code>
+            <p>Maximum occurs at the injected end of each strip.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel formula-page">
+        <h2>Power loss and performance result</h2>
+        <div class="formula-grid">
+          <article>
+            <h3>Copper loss in all strips</h3>
+            <code class="equation">P<sub>Cu</sub> = N<sub>S</sub>[2I<sub>STRIP</sub><sup>2</sup>R<sub>0</sub> + 2I<sub>L</sub><sup>2</sup>R<sub>P</sub>Σj<sup>2</sup>]</code>
+            <p><code>Σj² = (N − 1)N(2N − 1) ÷ 6</code>, covering all pitch segments.</p>
+          </article>
+          <article>
+            <h3>Common-feed loss</h3>
+            <code class="equation">P<sub>FEED</sub> = I<sub>PANEL</sub><sup>2</sup> × R<sub>F</sub></code>
+          </article>
+          <article>
+            <h3>PASS / FAIL rule</h3>
+            <code class="equation">PASS when V<sub>N</sub> ≥ V<sub>MIN</sub></code>
+            <code class="equation">FAIL when V<sub>N</sub> &lt; V<sub>MIN</sub></code>
+            <p><code>V<sub>N</sub></code> is the voltage at the lowest, most distant LED.</p>
+          </article>
+        </div>
+      </section>
+    </div>
+
+    <aside class="notice">
+      <strong>Engineering note:</strong> This is a DC resistive estimate for identical,
+      uniformly spaced loads and equal positive/return copper. Validate multiplexed
+      peak current, connector ratings, vias, thermal rise and actual PCB geometry separately.
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
